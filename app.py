@@ -11,45 +11,12 @@ import math
 import numpy as np
 import streamlit.components.v1 as components
 import base64, os
+from streamlit_geolocation import streamlit_geolocation
 from analytics import (
     calcular_b_value, curva_gutenberg_richter,
     detectar_anomalias, calcular_tendencia,
     calcular_score, guardar_registro, cargar_historial,
 )
-
-# ── Telegram ──────────────────────────────────────────────────────────────────
-def enviar_telegram(mensaje: str) -> bool:
-    """Envía una notificación Telegram usando secretos de Streamlit.
-    Los secretos NO se almacenan en el código ni en GitHub.
-    """
-    try:
-        token = st.secrets["telegram_bot_token"]
-        chat_id = str(st.secrets["telegram_chat_id"])
-    except Exception:
-        return False
-
-    if not token or not chat_id:
-        return False
-
-    try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        response = requests.post(
-            url,
-            data={"chat_id": chat_id, "text": mensaje},
-            timeout=10,
-        )
-        response.raise_for_status()
-        return True
-    except Exception:
-        return False
-
-
-def clave_evento(row) -> str:
-    """Crea una clave estable para evitar notificar dos veces el mismo sismo."""
-    event_id = str(row.get("event_id", ""))
-    if event_id:
-        return event_id
-    return f"{row['tiempo'].isoformat()}|{row['magnitud']}|{row['lat']}|{row['lon']}"
 
 st.set_page_config(
     page_title="SismoAlert Pro",
@@ -350,35 +317,89 @@ section[data-testid="stSidebar"] {
 # CONSTANTES
 # ══════════════════════════════════════════════════════════════════════════════
 REGIONES = {
-    "🌎 Todo el mundo":    {},
-    "🇨🇴 Colombia":        {"minlatitude": -4,  "maxlatitude": 13,  "minlongitude": -79, "maxlongitude": -66},
-    "🇲🇽 México":          {"minlatitude": 14,  "maxlatitude": 33,  "minlongitude": -118,"maxlongitude": -86},
-    "🇵🇪 Perú":            {"minlatitude": -18, "maxlatitude": 0,   "minlongitude": -82, "maxlongitude": -68},
-    "🇨🇱 Chile":           {"minlatitude": -56, "maxlatitude": -17, "minlongitude": -76, "maxlongitude": -65},
-    "🇯🇵 Japón":           {"minlatitude": 30,  "maxlatitude": 46,  "minlongitude": 129, "maxlongitude": 146},
-    "🇺🇸 California":      {"minlatitude": 32,  "maxlatitude": 42,  "minlongitude": -125,"maxlongitude": -114},
+    "🌎 Todo el mundo": {},
+    "🇨🇴 Colombia": {"minlatitude": -4, "maxlatitude": 13, "minlongitude": -79, "maxlongitude": -66},
+    "🇲🇽 México": {"minlatitude": 14, "maxlatitude": 33, "minlongitude": -118, "maxlongitude": -86},
+    "🇵🇪 Perú": {"minlatitude": -18, "maxlatitude": 0, "minlongitude": -82, "maxlongitude": -68},
+    "🇨🇱 Chile": {"minlatitude": -56, "maxlatitude": -17, "minlongitude": -76, "maxlongitude": -65},
+    "🇪🇨 Ecuador": {"minlatitude": -5, "maxlatitude": 2, "minlongitude": -82, "maxlongitude": -75},
+    "🇦🇷 Argentina": {"minlatitude": -56, "maxlatitude": -21, "minlongitude": -74, "maxlongitude": -53},
+    "🇧🇷 Brasil": {"minlatitude": -34, "maxlatitude": 6, "minlongitude": -74, "maxlongitude": -34},
+    "🇨🇷 Costa Rica": {"minlatitude": 8, "maxlatitude": 12, "minlongitude": -86, "maxlongitude": -82},
+    "🇵🇦 Panamá": {"minlatitude": 7, "maxlatitude": 10, "minlongitude": -83, "maxlongitude": -77},
+    "🇺🇸 Estados Unidos": {"minlatitude": 24, "maxlatitude": 50, "minlongitude": -126, "maxlongitude": -66},
+    "🇺🇸 California": {"minlatitude": 32, "maxlatitude": 42, "minlongitude": -125, "maxlongitude": -114},
+    "🇨🇦 Canadá": {"minlatitude": 41, "maxlatitude": 84, "minlongitude": -141, "maxlongitude": -52},
+    "🇯🇵 Japón": {"minlatitude": 30, "maxlatitude": 46, "minlongitude": 129, "maxlongitude": 146},
+    "🇹🇭 Tailandia": {"minlatitude": 5, "maxlatitude": 21, "minlongitude": 97, "maxlongitude": 106},
+    "🇮🇩 Indonesia": {"minlatitude": -11, "maxlatitude": 6, "minlongitude": 95, "maxlongitude": 141},
+    "🇵🇭 Filipinas": {"minlatitude": 4, "maxlatitude": 22, "minlongitude": 116, "maxlongitude": 127},
+    "🇹🇼 Taiwán": {"minlatitude": 21, "maxlatitude": 26, "minlongitude": 119, "maxlongitude": 123},
+    "🇨🇳 China": {"minlatitude": 18, "maxlatitude": 54, "minlongitude": 73, "maxlongitude": 135},
+    "🇰🇷 Corea del Sur": {"minlatitude": 33, "maxlatitude": 39, "minlongitude": 124, "maxlongitude": 130},
+    "🇳🇿 Nueva Zelanda": {"minlatitude": -48, "maxlatitude": -34, "minlongitude": 165, "maxlongitude": 179},
+    "🇦🇺 Australia": {"minlatitude": -44, "maxlatitude": -10, "minlongitude": 112, "maxlongitude": 154},
+    "🇮🇳 India": {"minlatitude": 6, "maxlatitude": 36, "minlongitude": 68, "maxlongitude": 98},
+    "🇳🇵 Nepal": {"minlatitude": 26, "maxlatitude": 31, "minlongitude": 80, "maxlongitude": 89},
+    "🇹🇷 Turquía": {"minlatitude": 35, "maxlatitude": 43, "minlongitude": 25, "maxlongitude": 45},
+    "🇮🇹 Italia": {"minlatitude": 36, "maxlatitude": 47, "minlongitude": 6, "maxlongitude": 19},
+    "🇬🇷 Grecia": {"minlatitude": 34, "maxlatitude": 42, "minlongitude": 19, "maxlongitude": 29},
+    "🇪🇸 España": {"minlatitude": 35, "maxlatitude": 44, "minlongitude": -10, "maxlongitude": 4},
+    "🇵🇹 Portugal": {"minlatitude": 36, "maxlatitude": 43, "minlongitude": -10, "maxlongitude": -6},
+    "🇮🇸 Islandia": {"minlatitude": 63, "maxlatitude": 67, "minlongitude": -25, "maxlongitude": -13},
+    "🇳🇴 Noruega": {"minlatitude": 57, "maxlatitude": 72, "minlongitude": 4, "maxlongitude": 32},
+    "🇮🇳 Indonesia": {"minlatitude": -11, "maxlatitude": 6, "minlongitude": 95, "maxlongitude": 141},
+    "🇵🇬 Papúa Nueva Guinea": {"minlatitude": -12, "maxlatitude": 0, "minlongitude": 140, "maxlongitude": 160},
+    "🇸🇧 Islas Salomón": {"minlatitude": -13, "maxlatitude": -5, "minlongitude": 155, "maxlongitude": 170},
+    "🇻🇺 Vanuatu": {"minlatitude": -21, "maxlatitude": -13, "minlongitude": 166, "maxlongitude": 171},
+    "🇫🇯 Fiyi": {"minlatitude": -21, "maxlatitude": -15, "minlongitude": 176, "maxlongitude": 180},
+    "🇸🇨 Islas Seychelles": {"minlatitude": -5, "maxlatitude": -3, "minlongitude": 46, "maxlongitude": 56},
+    "🇿🇦 Sudáfrica": {"minlatitude": -35, "maxlatitude": -22, "minlongitude": 16, "maxlongitude": 33},
+    "🇲🇦 Marruecos": {"minlatitude": 27, "maxlatitude": 36, "minlongitude": -14, "maxlongitude": -1},
+    "🇰🇪 Kenia": {"minlatitude": -5, "maxlatitude": 5, "minlongitude": 33, "maxlongitude": 42},
+    "🇪🇬 Egipto": {"minlatitude": 22, "maxlatitude": 32, "minlongitude": 24, "maxlongitude": 37},
 }
 
 # Centro geográfico de cada región para centrar el mapa automáticamente
 REGION_CENTRO = {
-    "🌎 Todo el mundo":  (20,     0,    2),
-    "🇨🇴 Colombia":      (4.5,   -74.0, 5),
-    "🇲🇽 México":        (23.0,  -102.0,5),
-    "🇵🇪 Perú":          (-9.0,  -75.0, 5),
-    "🇨🇱 Chile":         (-35.0, -71.0, 5),
-    "🇯🇵 Japón":         (37.5,  137.5, 5),
-    "🇺🇸 California":    (37.0, -120.0, 6),
+    "🌎 Todo el mundo": (20, 0, 2),
+    "🇨🇴 Colombia": (4.5, -74.0, 5), "🇲🇽 México": (23.0, -102.0, 5),
+    "🇵🇪 Perú": (-9.0, -75.0, 5), "🇨🇱 Chile": (-35.0, -71.0, 5),
+    "🇪🇨 Ecuador": (-1.5, -78.0, 6), "🇦🇷 Argentina": (-38.4, -63.6, 4),
+    "🇧🇷 Brasil": (-10.0, -52.0, 4), "🇯🇵 Japón": (37.5, 137.5, 5),
+    "🇹🇭 Tailandia": (15.0, 101.0, 5), "🇮🇩 Indonesia": (-2.0, 118.0, 4),
+    "🇵🇭 Filipinas": (12.0, 122.0, 5), "🇨🇳 China": (35.0, 103.0, 4),
+    "🇰🇷 Corea del Sur": (36.5, 127.8, 6), "🇳🇿 Nueva Zelanda": (-41.0, 174.0, 5),
+    "🇦🇺 Australia": (-25.0, 134.0, 4), "🇮🇳 India": (22.0, 79.0, 4),
+    "🇹🇷 Turquía": (39.0, 35.0, 5), "🇮🇹 Italia": (42.5, 12.5, 5),
+    "🇬🇷 Grecia": (39.0, 22.0, 6), "🇪🇸 España": (40.0, -4.0, 5),
+    "🇺🇸 Estados Unidos": (39.0, -98.0, 4), "🇨🇦 Canadá": (56.0, -106.0, 4),
+    "🇺🇸 California": (37.0, -120.0, 6),
 }
 
 CIUDADES_REF = {
-    "Bogotá, Colombia":     (4.711,  -74.072),
-    "Medellín, Colombia":   (6.244,  -75.574),
-    "Cali, Colombia":       (3.451,  -76.532),
-    "Ciudad de México":     (19.433, -99.133),
-    "Lima, Perú":           (-12.046,-77.043),
-    "Santiago, Chile":      (-33.457,-70.648),
-    "Quito, Ecuador":       (-0.180, -78.468),
-    "Personalizada":        None,
+    "📍 Montería, Colombia": (8.7575, -75.8814),
+    "Bogotá, Colombia": (4.711, -74.072),
+    "Medellín, Colombia": (6.244, -75.574),
+    "Cali, Colombia": (3.451, -76.532),
+    "Barranquilla, Colombia": (10.9685, -74.7813),
+    "Cartagena, Colombia": (10.3910, -75.4794),
+    "Sincelejo, Colombia": (9.3047, -75.3978),
+    "Valledupar, Colombia": (10.4631, -73.2532),
+    "Santa Marta, Colombia": (11.2408, -74.1990),
+    "Bucaramanga, Colombia": (7.1193, -73.1227),
+    "Ciudad de México": (19.433, -99.133),
+    "Lima, Perú": (-12.046, -77.043),
+    "Santiago, Chile": (-33.457, -70.648),
+    "Quito, Ecuador": (-0.180, -78.468),
+    "Bangkok, Tailandia": (13.7563, 100.5018),
+    "Chiang Mai, Tailandia": (18.7883, 98.9853),
+    "Phuket, Tailandia": (7.8804, 98.3923),
+    "Tokio, Japón": (35.6762, 139.6503),
+    "Manila, Filipinas": (14.5995, 120.9842),
+    "Yakarta, Indonesia": (-6.2088, 106.8456),
+    "Seúl, Corea del Sur": (37.5665, 126.9780),
+    "Personalizada": None,
 }
 
 PLAN_ACCION = {
@@ -470,7 +491,6 @@ def obtener_sismos(dias: int, magnitud_min: float, region_params: dict) -> pd.Da
             "lat":         float(c[1]),
             "tiempo":      datetime.utcfromtimestamp(p["time"] / 1000),
             "tipo":        p.get("type", "earthquake"),
-            "event_id":    str(f.get("id") or ""),
         })
     return pd.DataFrame(registros)
 
@@ -608,10 +628,24 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 📍 Mi ubicación")
+    st.caption("Puedes elegir una ciudad o permitir que el navegador detecte tu ubicación actual.")
+
+    # Geolocalización real desde el navegador del celular/PC.
+    ubicacion = streamlit_geolocation()
+    if ubicacion and ubicacion.get("latitude") is not None and ubicacion.get("longitude") is not None:
+        lat_auto = float(ubicacion["latitude"])
+        lon_auto = float(ubicacion["longitude"])
+        st.success(f"📍 Ubicación detectada: {lat_auto:.5f}, {lon_auto:.5f}")
+    else:
+        lat_auto = lon_auto = None
+
     ciudad_sel = st.selectbox("Ciudad de referencia", list(CIUDADES_REF.keys()))
 
-    if ciudad_sel == "Personalizada" or CIUDADES_REF[ciudad_sel] is None:
-        lat_usuario = st.number_input("Latitud",  value=4.7110,  format="%.4f")
+    if lat_auto is not None and ciudad_sel == "Personalizada":
+        lat_usuario, lon_usuario = lat_auto, lon_auto
+        st.caption("Usando la ubicación detectada por el dispositivo.")
+    elif ciudad_sel == "Personalizada" or CIUDADES_REF[ciudad_sel] is None:
+        lat_usuario = st.number_input("Latitud", value=4.7110, format="%.4f")
         lon_usuario = st.number_input("Longitud", value=-74.0721, format="%.4f")
     else:
         lat_usuario, lon_usuario = CIUDADES_REF[ciudad_sel]
@@ -794,30 +828,6 @@ def reproducir_alarma(nivel: str, magnitud: float = 0):
 sismos_criticos = df[df["magnitud"] >= 6.5]
 sismos_altos    = df[(df["magnitud"] >= 5.5) & (df["magnitud"] < 6.5)]
 sismos_medios   = df[(df["magnitud"] >= 4.5) & (df["magnitud"] < 5.5)]
-
-# Notificación Telegram para eventos recientes (cuando la app está ejecutándose).
-# El monitor independiente de GitHub Actions cubre el caso en que la app esté cerrada.
-if "telegram_notificados" not in st.session_state:
-    st.session_state["telegram_notificados"] = set()
-
-ahora_utc = datetime.utcnow()
-ventana_alerta = df[df["tiempo"] >= ahora_utc - timedelta(minutes=10)]
-for _, evento in ventana_alerta.iterrows():
-    mag = float(evento["magnitud"])
-    nivel_evento = "CRÍTICA" if mag >= 6.5 else "ALTA" if mag >= 5.5 else "MEDIA" if mag >= 4.5 else None
-    if nivel_evento:
-        clave = clave_evento(evento)
-        if clave not in st.session_state["telegram_notificados"]:
-            mensaje = (
-                f"🌍 SismoAlert Pro\n"
-                f"🚨 ALERTA {nivel_evento}\n"
-                f"Magnitud: M{mag:.1f}\n"
-                f"Lugar: {evento['lugar']}\n"
-                f"Profundidad: {evento['profundidad']:.1f} km\n"
-                f"Hora: {evento['tiempo'].strftime('%d/%m/%Y %H:%M')} UTC"
-            )
-            if enviar_telegram(mensaje):
-                st.session_state["telegram_notificados"].add(clave)
 
 if not sismos_criticos.empty:
     ultimo_critico = sismos_criticos.iloc[0]
