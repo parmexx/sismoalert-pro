@@ -5,3 +5,5 @@ plotly>=5.20.0
 requests>=2.31.0
 pandas>=2.2.0
 streamlit-geolocation>=0.0.10
+pycountry>=24.6.1
+geopy>=2.4.1
