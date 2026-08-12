@@ -362,19 +362,47 @@ REGIONES = {
 
 # Centro geográfico de cada región para centrar el mapa automáticamente
 REGION_CENTRO = {
-    "🌎 Todo el mundo": (20, 0, 2),
-    "🇨🇴 Colombia": (4.5, -74.0, 5), "🇲🇽 México": (23.0, -102.0, 5),
-    "🇵🇪 Perú": (-9.0, -75.0, 5), "🇨🇱 Chile": (-35.0, -71.0, 5),
-    "🇪🇨 Ecuador": (-1.5, -78.0, 6), "🇦🇷 Argentina": (-38.4, -63.6, 4),
-    "🇧🇷 Brasil": (-10.0, -52.0, 4), "🇯🇵 Japón": (37.5, 137.5, 5),
-    "🇹🇭 Tailandia": (15.0, 101.0, 5), "🇮🇩 Indonesia": (-2.0, 118.0, 4),
-    "🇵🇭 Filipinas": (12.0, 122.0, 5), "🇨🇳 China": (35.0, 103.0, 4),
-    "🇰🇷 Corea del Sur": (36.5, 127.8, 6), "🇳🇿 Nueva Zelanda": (-41.0, 174.0, 5),
-    "🇦🇺 Australia": (-25.0, 134.0, 4), "🇮🇳 India": (22.0, 79.0, 4),
-    "🇹🇷 Turquía": (39.0, 35.0, 5), "🇮🇹 Italia": (42.5, 12.5, 5),
-    "🇬🇷 Grecia": (39.0, 22.0, 6), "🇪🇸 España": (40.0, -4.0, 5),
-    "🇺🇸 Estados Unidos": (39.0, -98.0, 4), "🇨🇦 Canadá": (56.0, -106.0, 4),
-    "🇺🇸 California": (37.0, -120.0, 6),
+    "🌎 Todo el mundo":       (20, 0, 2),
+    "🇨🇴 Colombia":           (4.5, -74.0, 5),
+    "🇲🇽 México":             (23.0, -102.0, 5),
+    "🇵🇪 Perú":               (-9.0, -75.0, 5),
+    "🇨🇱 Chile":              (-35.0, -71.0, 5),
+    "🇪🇨 Ecuador":            (-1.5, -78.0, 6),
+    "🇦🇷 Argentina":          (-38.4, -63.6, 4),
+    "🇧🇷 Brasil":             (-10.0, -52.0, 4),
+    "🇨🇷 Costa Rica":         (9.7, -84.0, 7),
+    "🇵🇦 Panamá":             (8.5, -80.0, 7),
+    "🇺🇸 Estados Unidos":     (39.0, -98.0, 4),
+    "🇺🇸 California":         (37.0, -120.0, 6),
+    "🇨🇦 Canadá":             (56.0, -106.0, 4),
+    "🇯🇵 Japón":              (37.5, 137.5, 5),
+    "🇹🇭 Tailandia":          (13.0, 101.0, 6),
+    "🇮🇩 Indonesia":          (-2.0, 118.0, 4),
+    "🇵🇭 Filipinas":          (12.0, 122.0, 5),
+    "🇹🇼 Taiwán":             (23.5, 121.0, 7),
+    "🇨🇳 China":              (35.0, 103.0, 4),
+    "🇰🇷 Corea del Sur":      (36.5, 127.8, 6),
+    "🇳🇿 Nueva Zelanda":      (-41.0, 174.0, 5),
+    "🇦🇺 Australia":          (-25.0, 134.0, 4),
+    "🇮🇳 India":              (22.0, 79.0, 4),
+    "🇳🇵 Nepal":              (28.0, 84.0, 7),
+    "🇹🇷 Turquía":            (39.0, 35.0, 5),
+    "🇮🇹 Italia":             (42.5, 12.5, 5),
+    "🇬🇷 Grecia":             (39.0, 22.0, 6),
+    "🇪🇸 España":             (40.0, -4.0, 5),
+    "🇵🇹 Portugal":           (39.5, -8.0, 6),
+    "🇮🇸 Islandia":           (65.0, -19.0, 6),
+    "🇳🇴 Noruega":            (64.0, 17.0, 5),
+    "🇵🇬 Papúa Nueva Guinea": (-6.0, 147.0, 5),
+    "🇸🇧 Islas Salomón":      (-9.0, 160.0, 6),
+    "🇻🇺 Vanuatu":            (-16.0, 167.0, 6),
+    "🇫🇯 Fiyi":               (-18.0, 178.0, 7),
+    "🇸🇨 Islas Seychelles":   (-4.0, 55.0, 8),
+    "🇿🇦 Sudáfrica":          (-29.0, 25.0, 5),
+    "🇲🇦 Marruecos":          (31.0, -7.0, 6),
+    "🇰🇪 Kenia":              (0.0, 37.0, 6),
+    "🇪🇬 Egipto":             (26.0, 30.0, 6),
+    "🇮🇳 Indonesia":          (-2.0, 118.0, 4),
 }
 
 CIUDADES_REF = {
@@ -623,8 +651,20 @@ with st.sidebar:
     region_nombre = st.selectbox("Región", list(REGIONES.keys()))
     region_params = REGIONES[region_nombre]
     dias         = st.slider("Últimos días", 1, 30, 7)
-    magnitud_min = st.slider("Magnitud mínima", 0.0, 7.0, 2.5, 0.5)
+    magnitud_min = st.slider("Magnitud mínima", 0.0, 7.0, 0.0, 0.5)
     radio_riesgo = st.slider("Radio de riesgo (km)", 100, 2000, 500, 100)
+
+    # Hora de última actualización
+    hora_utc      = datetime.utcnow().strftime("%d/%m/%Y %H:%M UTC")
+    hora_colombia = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y %H:%M")
+    st.markdown(f"""
+    <div style='background:rgba(255,75,75,0.08);border:1px solid rgba(255,75,75,0.2);
+    border-radius:8px;padding:0.6rem 0.8rem;margin-top:0.5rem;font-size:0.8rem;color:rgba(255,255,255,0.7)'>
+    🕐 <b>Última actualización</b><br>
+    🌐 {hora_utc}<br>
+    🇨🇴 {hora_colombia} (Colombia)
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("### 📍 Mi ubicación")
@@ -963,26 +1003,52 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 # │  TAB 1 — MAPA                                                │
 # └──────────────────────────────────────────────────────────────┘
 with tab1:
-    lat_c, lon_c, zoom = REGION_CENTRO[region_nombre]
+    # Centro automático: usa REGION_CENTRO si existe, sino calcula del promedio de sismos o params
+    if region_nombre in REGION_CENTRO:
+        lat_c, lon_c, zoom = REGION_CENTRO[region_nombre]
+    elif not df.empty:
+        lat_c = df["lat"].mean()
+        lon_c = df["lon"].mean()
+        zoom  = 5
+    elif region_params:
+        lat_c = (region_params.get("minlatitude", 0) + region_params.get("maxlatitude", 0)) / 2
+        lon_c = (region_params.get("minlongitude", 0) + region_params.get("maxlongitude", 0)) / 2
+        zoom  = 5
+    else:
+        lat_c, lon_c, zoom = 20, 0, 2
+
     centro = [lat_c, lon_c]
     m = folium.Map(location=centro, zoom_start=zoom, tiles="CartoDB dark_matter")
+
+    # Mostrar info de sismos encontrados
+    st.markdown(f"""
+    <div style='background:rgba(255,75,75,0.08);border:1px solid rgba(255,75,75,0.2);
+    border-radius:10px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:rgba(255,255,255,0.8)'>
+    🌍 <b>{region_nombre}</b> — Se encontraron <b>{len(df)} sismos</b>
+    (M≥{magnitud_min} · últimos {dias} días) · Datos: USGS
+    </div>
+    """, unsafe_allow_html=True)
 
     if vista_mapa in ["Puntos por magnitud", "Ambos"]:
         cluster = MarkerCluster(disableClusteringAtZoom=6).add_to(m)
         for _, row in df.iterrows():
+            # Hora Colombia (UTC-5)
+            hora_col = (row["tiempo"] - timedelta(hours=5)).strftime("%d/%m/%Y %H:%M")
             folium.CircleMarker(
                 location=[row["lat"], row["lon"]],
                 radius=max(4, row["magnitud"] * 3.5),
                 color=color_magnitud(row["magnitud"]),
                 fill=True, fill_opacity=0.75,
                 popup=folium.Popup(
-                    f"<div style='font-family:sans-serif;min-width:200px'>"
-                    f"<b style='color:#FF4B4B'>{row['lugar']}</b><br>"
-                    f"<b>Magnitud:</b> {row['magnitud']}<br>"
-                    f"<b>Profundidad:</b> {row['profundidad']:.1f} km<br>"
-                    f"<b>Fecha:</b> {row['tiempo'].strftime('%Y-%m-%d %H:%M')} UTC</div>",
-                    max_width=260
+                    f"<div style='font-family:sans-serif;min-width:220px'>"
+                    f"<b style='color:#FF4B4B;font-size:1rem'>{row['lugar']}</b><br><br>"
+                    f"💥 <b>Magnitud:</b> M{row['magnitud']}<br>"
+                    f"⬇️ <b>Profundidad:</b> {row['profundidad']:.1f} km<br>"
+                    f"🌐 <b>UTC:</b> {row['tiempo'].strftime('%d/%m/%Y %H:%M')}<br>"
+                    f"🇨🇴 <b>Colombia:</b> {hora_col}</div>",
+                    max_width=280
                 ),
+                tooltip=f"M{row['magnitud']} — {row['lugar']}"
             ).add_to(cluster)
 
     if vista_mapa in ["Mapa de calor (heatmap)", "Ambos"]:
@@ -994,9 +1060,10 @@ with tab1:
         location=[lat_usuario, lon_usuario],
         popup="📍 Tu ubicación",
         icon=folium.Icon(color="blue", icon="home", prefix="fa"),
+        tooltip="📍 Tu ubicación"
     ).add_to(m)
 
-    st_folium(m, width="100%", height=540)
+    st_folium(m, width="100%", height=560)
 
     st.markdown("""
     🔴 `M ≥ 7.0` Muy alto &nbsp;|&nbsp;
