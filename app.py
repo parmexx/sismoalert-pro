@@ -708,7 +708,29 @@ with st.spinner("🌐 Conectando con servidores USGS..."):
     df = obtener_sismos(dias, magnitud_min, region_params)
 
 if df.empty:
-    st.warning("No se obtuvieron datos. Verifica tu conexión a internet.")
+    st.info(f"ℹ️ No se encontraron sismos en **{region_nombre}** con los filtros actuales (M≥{magnitud_min}, últimos {dias} días). Mostrando mapa de la región.")
+
+    # Igual mostramos el mapa centrado en el país
+    if region_nombre in REGION_CENTRO:
+        lat_c, lon_c, zoom = REGION_CENTRO[region_nombre]
+    elif region_params:
+        lat_c = (region_params.get("minlatitude", 0) + region_params.get("maxlatitude", 0)) / 2
+        lon_c = (region_params.get("minlongitude", 0) + region_params.get("maxlongitude", 0)) / 2
+        zoom  = 5
+    else:
+        lat_c, lon_c, zoom = 20, 0, 2
+
+    m_empty = folium.Map(location=[lat_c, lon_c], zoom_start=zoom, tiles="CartoDB dark_matter")
+    st.markdown(f"### 🗺️ Mapa — {region_nombre}")
+    st_folium(m_empty, width="100%", height=500)
+
+    st.markdown("""
+    **¿Por qué no hay datos?**
+    - La región puede tener baja actividad sísmica en este período
+    - El USGS registra el sismo en las coordenadas del **epicentro**, no donde se sintió
+    - Por ejemplo: el temblor de Colombia del 10 de agosto se siente en Panamá pero el epicentro está en Colombia, entonces aparece al seleccionar Colombia
+    - Prueba aumentar los **días** o bajar la **magnitud mínima a 0.0**
+    """)
     st.stop()
 
 # ── Ticker de sismos en vivo ─────────────────────────────────────────────────
