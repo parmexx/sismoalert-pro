@@ -19,7 +19,7 @@ STATE_FILE = Path(__file__).with_name("telegram_alert_state.json")
 USGS_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
 TELEGRAM_URL = "https://api.telegram.org/bot{}/sendMessage"
 
-# Zona horaria de Colombia
+# Hora oficial de Colombia
 COLOMBIA_TZ = ZoneInfo("America/Bogota")
 
 
@@ -37,7 +37,7 @@ def load_state():
 
 
 def save_state(state):
-    """Guarda solamente los últimos 500 IDs para evitar crecimiento infinito."""
+    """Conserva solamente los últimos 500 IDs."""
     state["sent"] = state.get("sent", [])[-500:]
 
     STATE_FILE.write_text(
@@ -51,7 +51,7 @@ def save_state(state):
 
 
 def send_telegram(token, chat_id, text):
-    """Envía el mensaje a Telegram."""
+    """Envía un mensaje a Telegram."""
     response = requests.post(
         TELEGRAM_URL.format(token),
         data={
@@ -72,28 +72,26 @@ def main():
     # Hora actual en UTC
     now = datetime.now(timezone.utc)
 
-    # GitHub Actions normalmente se ejecuta cada 5 minutos.
-    # Dejamos 15 minutos de margen para evitar perder eventos
-    # si una ejecución se retrasa.
+    # Consultamos los últimos 15 minutos.
+    # Esto da margen si GitHub Actions se retrasa.
     start = now - timedelta(minutes=15)
 
     params = {
         "format": "geojson",
-
         "starttime": start.strftime(
             "%Y-%m-%dT%H:%M:%S"
         ),
-
         "endtime": now.strftime(
             "%Y-%m-%dT%H:%M:%S"
         ),
 
-        # SIN minmagnitude:
-        # se reciben eventos de cualquier magnitud disponible.
+        # IMPORTANTE:
+        # NO hay minmagnitude.
+        # Por lo tanto se reciben eventos
+        # de cualquier magnitud disponible.
 
         "orderby": "time",
 
-        # Máximo permitido por la API de USGS.
         "limit": 20000,
     }
 
@@ -110,11 +108,17 @@ def main():
         []
     )
 
+    print(
+        f"Eventos encontrados por USGS: {len(features)}"
+    )
+
     state = load_state()
 
     sent = set(
         state.get("sent", [])
     )
+
+    nuevos = 0
 
     for feature in features:
 
@@ -139,11 +143,11 @@ def main():
             or ""
         )
 
-        # Si no tiene ID no podemos controlar duplicados.
+        # Sin ID no podemos controlar duplicados.
         if not event_id:
             continue
 
-        # No volver a mandar un sismo ya enviado.
+        # Ya fue enviado.
         if event_id in sent:
             continue
 
@@ -151,7 +155,6 @@ def main():
             "mag"
         )
 
-        # Algunos eventos pueden no tener magnitud.
         if magnitude_value is None:
             magnitude_text = "No disponible"
         else:
@@ -165,18 +168,18 @@ def main():
                     magnitude_value
                 )
 
-        # Hora original del evento en UTC.
+        # Hora del evento
         event_timestamp = properties.get(
             "time"
         )
 
         if event_timestamp:
+
             event_time_utc = datetime.fromtimestamp(
                 event_timestamp / 1000,
                 tz=timezone.utc
             )
 
-            # Conversión a hora de Colombia.
             event_time_colombia = (
                 event_time_utc.astimezone(
                     COLOMBIA_TZ
@@ -196,6 +199,7 @@ def main():
             )
 
         else:
+
             hora_colombia = "No disponible"
             hora_utc = "No disponible"
 
@@ -203,6 +207,7 @@ def main():
             "place"
         ) or "Lugar no informado"
 
+        # Profundidad
         depth = (
             coordinates[2]
             if len(coordinates) > 2
@@ -211,15 +216,18 @@ def main():
         )
 
         if depth is not None:
+
             try:
                 depth_text = (
                     f"{float(depth):.1f} km"
                 )
             except Exception:
                 depth_text = str(depth)
+
         else:
             depth_text = "No disponible"
 
+        # Mensaje Telegram
         text = (
             "🌍 SismoAlert Pro\n"
             "🔔 NUEVO SISMO DETECTADO\n\n"
@@ -242,22 +250,27 @@ def main():
             )
 
             sent.add(event_id)
+            nuevos += 1
 
             print(
-                f"Sismo enviado: "
+                f"✅ Sismo enviado: "
                 f"{magnitude_text} - {place}"
             )
 
         except Exception as error:
 
             print(
-                f"Error enviando "
+                f"❌ Error enviando "
                 f"{event_id}: {error}"
             )
 
     state["sent"] = list(sent)
 
     save_state(state)
+
+    print(
+        f"Alertas nuevas enviadas: {nuevos}"
+    )
 
 
 if __name__ == "__main__":
