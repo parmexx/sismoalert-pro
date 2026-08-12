@@ -654,7 +654,9 @@ with st.sidebar:
     st.markdown("---")
     vista_mapa = st.selectbox("Vista del mapa", ["Puntos por magnitud", "Mapa de calor (heatmap)", "Ambos"])
     if st.button("🔄 Actualizar datos", use_container_width=True):
+        # Limpiar la caché y ejecutar de nuevo con los filtros actuales.
         st.cache_data.clear()
+        st.rerun()
 
     st.markdown("---")
     st.caption("Datos: USGS · Actualización cada 5 min")
