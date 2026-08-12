@@ -18,28 +18,42 @@ STATE_FILE = Path(__file__).with_name("telegram_alert_state.json")
 
 USGS_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
 TELEGRAM_URL = "https://api.telegram.org/bot{}/sendMessage"
+TELEGRAM_UPDATES_URL = "https://api.telegram.org/bot{}/getUpdates"
 
 # Hora oficial de Colombia
 COLOMBIA_TZ = ZoneInfo("America/Bogota")
 
 
 def load_state():
-    """Carga los IDs de sismos que ya fueron enviados."""
+    """Carga el estado de sismos y suscriptores de Telegram."""
     if not STATE_FILE.exists():
-        return {"sent": []}
+        return {
+            "sent": [],
+            "subscribers": [],
+            "telegram_update_offset": 0,
+        }
 
     try:
-        return json.loads(
+        state = json.loads(
             STATE_FILE.read_text(encoding="utf-8")
         )
+        state.setdefault("sent", [])
+        state.setdefault("subscribers", [])
+        state.setdefault("telegram_update_offset", 0)
+        return state
     except Exception:
-        return {"sent": []}
-
+        return {
+            "sent": [],
+            "subscribers": [],
+            "telegram_update_offset": 0,
+        }
 
 def save_state(state):
-    """Conserva solamente los últimos 500 IDs."""
+    """Conserva los últimos 500 sismos y los suscriptores activos."""
     state["sent"] = state.get("sent", [])[-500:]
-
+    state["subscribers"] = list(dict.fromkeys(
+        str(chat_id) for chat_id in state.get("subscribers", [])
+    ))
     STATE_FILE.write_text(
         json.dumps(
             state,
@@ -48,7 +62,6 @@ def save_state(state):
         ),
         encoding="utf-8"
     )
-
 
 def send_telegram(token, chat_id, text):
     """Envía un mensaje a Telegram."""
@@ -64,10 +77,118 @@ def send_telegram(token, chat_id, text):
     response.raise_for_status()
 
 
+
+def get_updates(token, offset):
+    """Obtiene mensajes nuevos del bot para detectar /start y /stop."""
+    response = requests.get(
+        TELEGRAM_UPDATES_URL.format(token),
+        params={
+            "offset": offset or None,
+            "timeout": 5,
+            "allowed_updates": json.dumps(["message"]),
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    if not data.get("ok"):
+        raise RuntimeError(
+            data.get("description", "Telegram getUpdates falló")
+        )
+
+    return data.get("result", [])
+
+
+def update_subscribers(token, state):
+    """
+    Registra automáticamente a cualquier persona/chat que envíe /start.
+    También permite /stop para dejar de recibir alertas.
+    """
+    subscribers = set(
+        str(chat_id) for chat_id in state.get("subscribers", [])
+    )
+
+    # Conservamos el chat principal que ya funcionaba.
+    legacy_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if legacy_chat_id:
+        subscribers.add(str(legacy_chat_id))
+
+    offset = int(state.get("telegram_update_offset", 0) or 0)
+
+    try:
+        updates = get_updates(token, offset)
+    except Exception as error:
+        print(
+            "⚠️ No se pudieron consultar nuevos suscriptores de Telegram: "
+            f"{error}"
+        )
+        state["subscribers"] = list(subscribers)
+        return
+
+    for update in updates:
+        update_id = update.get("update_id")
+        if update_id is not None:
+            offset = max(offset, int(update_id) + 1)
+
+        message = update.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        text = (message.get("text") or "").strip()
+
+        if chat_id is None:
+            continue
+
+        command = (
+            text.split()[0].split("@")[0].lower()
+            if text else ""
+        )
+
+        if command == "/start":
+            chat_id_text = str(chat_id)
+            is_new = chat_id_text not in subscribers
+            subscribers.add(chat_id_text)
+
+            if is_new:
+                try:
+                    send_telegram(
+                        token,
+                        chat_id_text,
+                        "🌍 SismoAlert Pro\n\n"
+                        "✅ Te has suscrito correctamente.\n"
+                        "Recibirás las alertas sísmicas automáticas "
+                        "cuando se detecten nuevos eventos.\n\n"
+                        "Para dejar de recibirlas, escribe /stop."
+                    )
+                    print(f"👤 Nuevo suscriptor: {chat_id_text}")
+                except Exception as error:
+                    print(
+                        f"⚠️ Se registró {chat_id_text}, "
+                        f"pero no se pudo enviar el mensaje de bienvenida: "
+                        f"{error}"
+                    )
+
+        elif command == "/stop":
+            chat_id_text = str(chat_id)
+            if chat_id_text in subscribers:
+                subscribers.remove(chat_id_text)
+                print(f"👋 Suscriptor eliminado: {chat_id_text}")
+
+    state["telegram_update_offset"] = offset
+    state["subscribers"] = list(subscribers)
+    print(f"👥 Suscriptores activos: {len(subscribers)}")
+
+
 def main():
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
+
+    # Registrar automáticamente a quienes hayan enviado /start.
+    state = load_state()
+    update_subscribers(token, state)
+    subscribers = set(
+        str(chat_id) for chat_id in state.get("subscribers", [])
+    )
 
     # Hora actual en UTC
     now = datetime.now(timezone.utc)
@@ -111,8 +232,6 @@ def main():
     print(
         f"Eventos encontrados por USGS: {len(features)}"
     )
-
-    state = load_state()
 
     sent = set(
         state.get("sent", [])
@@ -241,27 +360,56 @@ def main():
             "No constituye una predicción de sismos."
         )
 
-        try:
+        enviados_evento = 0
+        suscriptores_invalidos = []
 
-            send_telegram(
-                token,
-                chat_id,
-                text
-            )
+        for subscriber_id in list(subscribers):
+            try:
+                send_telegram(
+                    token,
+                    subscriber_id,
+                    text
+                )
+                enviados_evento += 1
 
+            except requests.HTTPError as error:
+                status_code = getattr(
+                    error.response,
+                    "status_code",
+                    None
+                )
+                if status_code in (400, 403):
+                    suscriptores_invalidos.append(subscriber_id)
+                    print(
+                        f"⚠️ Se elimina suscriptor {subscriber_id}: "
+                        f"Telegram respondió HTTP {status_code}"
+                    )
+                else:
+                    print(
+                        f"❌ Error enviando a {subscriber_id}: {error}"
+                    )
+
+            except Exception as error:
+                print(
+                    f"❌ Error enviando a {subscriber_id}: {error}"
+                )
+
+        for subscriber_id in suscriptores_invalidos:
+            subscribers.discard(subscriber_id)
+
+        state["subscribers"] = list(subscribers)
+
+        if enviados_evento > 0:
             sent.add(event_id)
             nuevos += 1
-
             print(
-                f"✅ Sismo enviado: "
-                f"{magnitude_text} - {place}"
+                f"✅ Sismo enviado a {enviados_evento} "
+                f"chat(s): {magnitude_text} - {place}"
             )
-
-        except Exception as error:
-
+        else:
             print(
-                f"❌ Error enviando "
-                f"{event_id}: {error}"
+                f"⚠️ No se pudo enviar el sismo a ningún suscriptor: "
+                f"{magnitude_text} - {place}"
             )
 
     state["sent"] = list(sent)
