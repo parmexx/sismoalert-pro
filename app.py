@@ -486,11 +486,11 @@ PLAN_ACCION = {
 # FUNCIONES
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=300)
 USGS_API = "https://earthquake.usgs.gov/fdsnws/event/1/query"
 EMSC_API = "https://www.seismicportal.eu/fdsnws/event/1/query"
 SGC_API  = "https://sgc.gov.co/sgc/sismos/fdsnws/event/1/query"
 
+@st.cache_data(ttl=300)
 def obtener_sismos(dias: int, magnitud_min: float, region_params: dict) -> pd.DataFrame:
     fecha_fin    = datetime.utcnow()
     fecha_inicio = fecha_fin - timedelta(days=dias)
