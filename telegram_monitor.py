@@ -294,6 +294,9 @@ def obtener_sismos_sgc(start: datetime, now: datetime) -> list:
     except Exception as e:
         print(f"Error SGC: {e}")
         return []
+
+
+def check_and_alert(state: dict, subscribers: set) -> dict:
     """Consulta USGS + EMSC y envía alertas a todos los suscriptores."""
     if not subscribers:
         print("Sin suscriptores aún.")
