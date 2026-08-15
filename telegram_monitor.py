@@ -370,7 +370,7 @@ def check_and_alert(state, subscribers):
         print("Sin suscriptores aún.")
         return state
     now = datetime.now(timezone.utc)
-    start = now - timedelta(hours=2)
+    start = now - timedelta(hours=6)
     print(f"🕐 Ventana: {start:%Y-%m-%d %H:%M:%S UTC} → {now:%Y-%m-%d %H:%M:%S UTC}")
 
     usgs = obtener_sismos_usgs(start, now)
