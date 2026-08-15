@@ -581,40 +581,9 @@ def obtener_sismos(dias: int, magnitud_min: float, region_params: dict) -> pd.Da
         st.warning(f"⚠️ EMSC no disponible: {e}")
 
     # ── SGC Colombia ───────────────────────────────────────
-    try:
-        params_sgc = {
-            "format":    "geojson",
-            "starttime": fecha_inicio.strftime("%Y-%m-%d"),
-            "endtime":   fecha_fin.strftime("%Y-%m-%d"),
-            "orderby":   "time",
-            "limit":     1000,
-        }
-        resp = requests.get(SGC_API, params=params_sgc, timeout=15)
-        resp.raise_for_status()
-        for f in resp.json().get("features", []):
-            eid = f"sgc_{f.get('id','')}"
-            if eid in ids_vistos:
-                continue
-            ids_vistos.add(eid)
-            p = f["properties"]
-            c = f["geometry"]["coordinates"]
-            ts = p.get("time")
-            if ts:
-                tiempo = datetime.utcfromtimestamp(ts / 1000)
-            else:
-                continue
-            registros.append({
-                "lugar":       p.get("place") or p.get("description") or "Colombia",
-                "magnitud":    float(p.get("mag") or 0),
-                "profundidad": float(c[2]) if c[2] else 0,
-                "lon":         float(c[0]),
-                "lat":         float(c[1]),
-                "tiempo":      tiempo,
-                "tipo":        "earthquake",
-                "fuente":      "SGC",
-            })
-    except Exception as e:
-        st.warning(f"⚠️ SGC no disponible: {e}")
+    # El endpoint FDSN de SGC actualmente no entrega JSON válido para esta consulta.
+    # Se omite temporalmente para evitar falsas advertencias en la app.
+    # USGS y EMSC continúan proporcionando la cobertura sísmica.
 
     if not registros:
         return pd.DataFrame()

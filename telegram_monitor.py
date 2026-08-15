@@ -30,34 +30,46 @@ SUBSCRIBERS_FILE = Path(__file__).with_name("telegram_subscribers.json")
 
 # ── Manejo de suscriptores ────────────────────────────────────────────────────
 
-def load_subscribers() -> set:
-    """Carga la lista de chat_ids suscritos."""
-    if not SUBSCRIBERS_FILE.exists():
-        return set()
-    try:
-        data = json.loads(SUBSCRIBERS_FILE.read_text(encoding="utf-8"))
-        return set(str(x) for x in data.get("subscribers", []))
-    except Exception:
-        return set()
+def load_subscribers(state: dict) -> set:
+    """Carga suscriptores desde el estado principal, preservando los existentes."""
+    subscribers = set(str(x) for x in state.get("subscribers", []))
+
+    # Compatibilidad: si existe el archivo antiguo, lo incorporamos solo como respaldo.
+    if SUBSCRIBERS_FILE.exists():
+        try:
+            data = json.loads(SUBSCRIBERS_FILE.read_text(encoding="utf-8"))
+            subscribers.update(str(x) for x in data.get("subscribers", []))
+        except Exception:
+            pass
+
+    # Conserva el chat principal configurado en GitHub Actions.
+    legacy_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if legacy_chat_id:
+        subscribers.add(str(legacy_chat_id))
+
+    return subscribers
 
 
 def save_subscribers(subs: set) -> None:
-    """Guarda la lista de chat_ids suscritos."""
-    SUBSCRIBERS_FILE.write_text(
-        json.dumps({"subscribers": list(subs)}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
-    )
+    """Mantiene una copia compatible del archivo antiguo."""
+    try:
+        SUBSCRIBERS_FILE.write_text(
+            json.dumps({"subscribers": sorted(subs)}, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+    except Exception as e:
+        print(f"⚠️ No se pudo actualizar archivo legado de suscriptores: {e}")
 
 
 # ── Manejo de estado de alertas ───────────────────────────────────────────────
 
 def load_state() -> dict:
     if not STATE_FILE.exists():
-        return {"sent": [], "last_update_id": 0}
+        return {"sent": [], "subscribers": [], "telegram_update_offset": 0}
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except Exception:
-        return {"sent": [], "last_update_id": 0}
+        return {"sent": [], "subscribers": [], "telegram_update_offset": 0}
 
 
 def save_state(state: dict) -> None:
@@ -99,85 +111,71 @@ def get_updates(offset: int = 0) -> list:
 # ── Procesar comandos del bot ─────────────────────────────────────────────────
 
 def process_updates(state: dict, subscribers: set) -> tuple[dict, set]:
-    """Procesa mensajes nuevos y maneja /start y /stop."""
-    last_id = state.get("last_update_id", 0)
-    updates = get_updates(offset=last_id + 1)
+    """Procesa /start, /stop, /status y /help usando un único estado persistente."""
+    offset = int(state.get("telegram_update_offset", 0) or 0)
+    updates = get_updates(offset=offset)
 
     for update in updates:
-        last_id = max(last_id, update.get("update_id", 0))
-        message = update.get("message", {})
-        chat_id = str(message.get("chat", {}).get("id", ""))
-        text    = message.get("text", "").strip().lower()
-        nombre  = message.get("chat", {}).get("first_name", "amigo")
+        update_id = update.get("update_id")
+        if update_id is not None:
+            offset = max(offset, int(update_id) + 1)
+
+        message = update.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = str(chat.get("id", ""))
+        text = (message.get("text") or "").strip()
+        nombre = chat.get("first_name", "amigo")
 
         if not chat_id:
             continue
 
-        if text.startswith("/start"):
-            if chat_id not in subscribers:
-                subscribers.add(chat_id)
-                save_subscribers(subscribers)
+        command = text.split()[0].split("@")[0].lower() if text else ""
+
+        if command == "/start":
+            is_new = chat_id not in subscribers
+            subscribers.add(chat_id)
+            if is_new:
                 send_message(chat_id, (
                     f"🌍 <b>¡Hola {nombre}! Bienvenido a SismoAlert Pro</b>\n\n"
-                    f"✅ Te has suscrito correctamente.\n\n"
-                    f"A partir de ahora recibirás alertas automáticas cuando se detecte "
-                    f"actividad sísmica en cualquier parte del mundo.\n\n"
-                    f"📋 <b>Comandos disponibles:</b>\n"
-                    f"/start — Suscribirte a las alertas\n"
-                    f"/stop — Cancelar suscripción\n"
-                    f"/status — Ver estado del monitor\n"
-                    f"/help — Ver ayuda\n\n"
-                    f"🌐 App web: https://sismoalert-pro-since-2026.streamlit.app"
+                    "✅ Te has suscrito correctamente.\n\n"
+                    "Recibirás alertas sísmicas automáticas de nuevos eventos "
+                    "detectados por USGS en todo el mundo.\n\n"
+                    "📋 <b>Comandos:</b> /start · /stop · /status · /help\n\n"
+                    "🌐 App web: https://sismoalert-pro-since-2026.streamlit.app"
                 ))
                 print(f"✅ Nuevo suscriptor: {chat_id} ({nombre})")
             else:
-                send_message(chat_id, (
-                    f"✅ {nombre}, ya estás suscrito a SismoAlert Pro.\n"
-                    f"Recibirás alertas automáticamente cuando haya actividad sísmica.\n\n"
-                    f"Usa /stop si deseas cancelar la suscripción."
-                ))
+                send_message(chat_id, f"✅ {nombre}, ya estás suscrito a SismoAlert Pro.")
 
-        elif text.startswith("/stop"):
+        elif command == "/stop":
             if chat_id in subscribers:
                 subscribers.discard(chat_id)
-                save_subscribers(subscribers)
-                send_message(chat_id, (
-                    f"😔 {nombre}, has cancelado tu suscripción a SismoAlert Pro.\n\n"
-                    f"Ya no recibirás alertas sísmicas.\n"
-                    f"Puedes volver a suscribirte cuando quieras con /start."
-                ))
+                send_message(chat_id, f"😔 {nombre}, has cancelado tu suscripción. Puedes volver con /start.")
                 print(f"❌ Suscriptor eliminado: {chat_id} ({nombre})")
             else:
                 send_message(chat_id, "No estás suscrito. Usa /start para suscribirte.")
 
-        elif text.startswith("/status"):
-            n = len(subscribers)
+        elif command == "/status":
             send_message(chat_id, (
                 f"📊 <b>Estado de SismoAlert Pro</b>\n\n"
-                f"👥 Suscriptores activos: <b>{n}</b>\n"
-                f"🕐 Hora UTC: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')}\n"
-                f"🇨🇴 Hora Colombia: {datetime.now(COLOMBIA_TZ).strftime('%d/%m/%Y %H:%M')}\n"
-                f"📡 Monitor: Activo (cada 5 minutos)\n"
-                f"🌐 Fuente: USGS Earthquake Hazards Program"
+                f"👥 Suscriptores activos: <b>{len(subscribers)}</b>\n"
+                f"🕐 UTC: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')}\n"
+                f"🇨🇴 Colombia: {datetime.now(COLOMBIA_TZ).strftime('%d/%m/%Y %H:%M')}\n"
+                "📡 Monitor: Activo cada 5 minutos\n"
+                "🌐 Fuente de alertas: USGS"
             ))
 
-        elif text.startswith("/help"):
+        elif command == "/help":
             send_message(chat_id, (
-                f"🌍 <b>SismoAlert Pro — Ayuda</b>\n\n"
-                f"Este bot envía alertas automáticas de actividad sísmica "
-                f"detectada por el USGS en tiempo real.\n\n"
-                f"📋 <b>Comandos:</b>\n"
-                f"/start — Suscribirte a las alertas\n"
-                f"/stop — Cancelar suscripción\n"
-                f"/status — Ver estado del monitor\n"
-                f"/help — Ver esta ayuda\n\n"
-                f"🌐 App web completa:\n"
-                f"https://sismoalert-pro-since-2026.streamlit.app\n\n"
-                f"⚠️ Las alertas son informativas. No reemplazan "
-                f"los sistemas oficiales de emergencia."
+                "🌍 <b>SismoAlert Pro — Ayuda</b>\n\n"
+                "Alertas sísmicas automáticas mediante USGS, sin filtro de magnitud.\n\n"
+                "/start — Suscribirte\n/stop — Cancelar\n/status — Estado\n/help — Ayuda\n\n"
+                "🌐 https://sismoalert-pro-since-2026.streamlit.app"
             ))
 
-    state["last_update_id"] = last_id
+    state["telegram_update_offset"] = offset
+    state["subscribers"] = sorted(subscribers)
+    print(f"👥 Suscriptores activos: {len(subscribers)}")
     return state, subscribers
 
 
@@ -262,38 +260,8 @@ def obtener_sismos_emsc(start: datetime, now: datetime) -> list:
 
 
 def obtener_sismos_sgc(start: datetime, now: datetime) -> list:
-    """Consulta SGC Colombia y retorna lista normalizada."""
-    params = {
-        "format":    "geojson",
-        "starttime": start.strftime("%Y-%m-%dT%H:%M:%S"),
-        "endtime":   now.strftime("%Y-%m-%dT%H:%M:%S"),
-        "orderby":   "time",
-        "limit":     1000,
-    }
-    try:
-        resp = requests.get(SGC_URL, params=params, timeout=30)
-        resp.raise_for_status()
-        features = resp.json().get("features", [])
-        print(f"SGC Colombia: {len(features)} eventos")
-        eventos = []
-        for f in features:
-            props = f.get("properties", {})
-            geo   = f.get("geometry", {}).get("coordinates") or [None, None, None]
-            eid   = str(f.get("id") or "")
-            if not eid:
-                continue
-            eventos.append({
-                "id":     f"sgc_{eid}",
-                "mag":    props.get("mag"),
-                "place":  props.get("place") or props.get("description") or "Colombia",
-                "time":   props.get("time"),
-                "depth":  geo[2],
-                "fuente": "SGC Colombia"
-            })
-        return eventos
-    except Exception as e:
-        print(f"Error SGC: {e}")
-        return []
+    """SGC no se usa en el monitor de Telegram mientras su endpoint FDSN no entregue JSON válido."""
+    return []
 
 
 def check_and_alert(state: dict, subscribers: set) -> dict:
@@ -305,12 +273,10 @@ def check_and_alert(state: dict, subscribers: set) -> dict:
     now   = datetime.now(timezone.utc)
     start = now - timedelta(minutes=30)
 
-    # Combinar eventos de las 3 fuentes
-    eventos_usgs = obtener_sismos_usgs(start, now)
-    eventos_emsc = obtener_sismos_emsc(start, now)
-    eventos_sgc  = obtener_sismos_sgc(start, now)
-    todos        = eventos_usgs + eventos_emsc + eventos_sgc
-    print(f"Total eventos combinados: {len(todos)}")
+    # Telegram usa USGS como fuente única: cobertura mundial y sin filtro de magnitud.
+    # Esto evita enviar dos veces el mismo evento cuando USGS y EMSC reportan el mismo sismo.
+    todos = obtener_sismos_usgs(start, now)
+    print(f"Total eventos USGS: {len(todos)}")
 
     sent    = set(state.get("sent", []))
     nuevos  = 0
@@ -399,10 +365,12 @@ def check_and_alert(state: dict, subscribers: set) -> dict:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    state       = load_state()
-    subscribers = load_subscribers()
+    state = load_state()
+    subscribers = load_subscribers(state)
 
-    print(f"Suscriptores activos: {len(subscribers)}")
+    # Migración segura: conserva los 5 suscriptores que ya están en telegram_alert_state.json.
+    state["subscribers"] = sorted(subscribers)
+    print(f"Suscriptores activos al iniciar: {len(subscribers)}")
 
     # 1. Procesar comandos nuevos (/start, /stop, etc.)
     state, subscribers = process_updates(state, subscribers)
@@ -410,8 +378,11 @@ def main():
     # 2. Consultar USGS y enviar alertas
     state = check_and_alert(state, subscribers)
 
-    # 3. Guardar estado
+    # 3. Guardar TODO en el mismo archivo de estado para que GitHub Actions no pierda suscriptores.
+    state["subscribers"] = sorted(subscribers)
     save_state(state)
+    save_subscribers(subscribers)
+    print(f"Estado guardado: {len(subscribers)} suscriptores | {len(state.get('sent', []))} eventos recordados")
 
 
 if __name__ == "__main__":
